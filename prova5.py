@@ -28,7 +28,7 @@ SEED = 42
 
 INPUT_SHAPE = (84, 84)     # (H, W)
 WINDOW_LENGTH = 4          # stack in keras-rl memory/model
-STAGE_STEPS_DEFAULT = 3_000_000  # recomendado para acercarte a min(last100)>20
+STAGE_STEPS_DEFAULT = 3_000_000  # recomendado para acercarnos al objetivo min(last100)>20
 WEIGHTS_PATH = "dqn_spaceinvaders_v0_weights.h5f"
 LOG_PATH = "training_log.json"
 
@@ -72,7 +72,7 @@ class MaxAndSkipEnv(gym.Wrapper):
 
 
 class FireResetEnv(gym.Wrapper):
-    """Asegura que el juego arranque (SpaceInvaders suele requerir FIRE)."""
+    """Asegura que el juego arranque (SpaceInvaders requiere FIRE)."""
     def reset(self, **kwargs):
         obs = self.env.reset()
 
