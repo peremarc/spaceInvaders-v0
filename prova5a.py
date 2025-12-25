@@ -28,7 +28,7 @@ SEED = 42
 
 INPUT_SHAPE = (84, 84)     # (H, W)
 WINDOW_LENGTH = 4          # stack in keras-rl memory/model
-STAGE_STEPS_DEFAULT = 3_000_000  # recomendado para acercarnos al objetivo min(last100)>20
+STAGE_STEPS_DEFAULT = 3_000_000  # para acercarnos al objetivo min(last100)>20
 WEIGHTS_PATH = "dqn_spaceinvaders_v0_weights.h5f"
 LOG_PATH = "training_log.json"
 
@@ -72,7 +72,7 @@ class MaxAndSkipEnv(gym.Wrapper):
 
 
 class FireResetEnv(gym.Wrapper):
-    """Asegura que el juego arranque (SpaceInvaders requiere FIRE)."""
+    """Asegura que el juego arranque (SpaceInvaders puede requerir FIRE para empezar)."""
     def reset(self, **kwargs):
         obs = self.env.reset()
 
@@ -100,26 +100,6 @@ class AtariProcessor(Processor):
         return np.clip(reward, -1.0, 1.0)
 
 
-# =========================
-# DUELING HEAD
-# =========================
-class DuelingCombine(Layer):
-    def __init__(self, dueling_type="avg", **kwargs):
-        super().__init__(**kwargs)
-        self.dueling_type = dueling_type
-
-    def call(self, inputs):
-        value, advantage = inputs
-        if self.dueling_type == "avg":
-            advantage = advantage - K.mean(advantage, axis=1, keepdims=True)
-        return value + advantage
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({"dueling_type": self.dueling_type})
-        return config
-
-
 def build_model(nb_actions: int) -> Model:
     # keras-rl2 entrega (window_length, H, W)
     inputs = Input(shape=(WINDOW_LENGTH,) + INPUT_SHAPE, name="input_frames")
@@ -130,12 +110,9 @@ def build_model(nb_actions: int) -> Model:
     x = Conv2D(64, (3, 3), strides=(1, 1), activation="relu")(x)
     x = Flatten()(x)
     x = Dense(512, activation="relu")(x)
-
-    value = Dense(1, activation="linear", name="V")(x)
-    advantage = Dense(nb_actions, activation="linear", name="A")(x)
-    q_values = DuelingCombine(dueling_type="avg", name="Q")([value, advantage])
-
-    return Model(inputs=inputs, outputs=q_values, name="DuelingDQN")
+    q = Dense(nb_actions, activation="linear")(x)
+    
+    return Model(inputs, q)
 
 
 def make_env(seed: int):
@@ -156,19 +133,19 @@ def set_seeds(seed: int):
     tf.random.set_seed(seed)
 
 
-def build_agent(env, steps_anneal: int, eps_min: float, memory_limit: int):
+def build_agent(env):
     nb_actions = env.action_space.n
     model = build_model(nb_actions)
 
-    memory = SequentialMemory(limit=memory_limit, window_length=WINDOW_LENGTH)
+    memory = SequentialMemory(limit=1000000, window_length=WINDOW_LENGTH)
 
     policy = LinearAnnealedPolicy(
         EpsGreedyQPolicy(),
         attr="eps",
         value_max=0.2, # from scratch 1.0
-        value_min=eps_min,
-        value_test=0.02,
-        nb_steps=steps_anneal,
+        value_min=0.02, # from scratch 0.1
+        value_test=0.02, # from scratch 0.01
+        nb_steps=200000, # from scratch 1000000
     )
 
     dqn = DQNAgent(
@@ -182,15 +159,15 @@ def build_agent(env, steps_anneal: int, eps_min: float, memory_limit: int):
         target_model_update=10_000,
         train_interval=4,
         enable_double_dqn=True,
-        enable_dueling_network=False,  # ya lo implementamos manualmente
-        custom_model_objects={"DuelingCombine": DuelingCombine},
+        enable_dueling_network=True,
+        dueling_type="avg",
     )
 
     dqn.compile(Adam(learning_rate=2.5e-4), metrics=["mae"])
     return dqn
 
 
-def train(dqn, env, nb_steps: int):
+def train(dqn, env):
     if os.path.exists(WEIGHTS_PATH + ".index"):
         print(f"Cargando pesos: {WEIGHTS_PATH}")
         dqn.load_weights(WEIGHTS_PATH)
@@ -199,7 +176,7 @@ def train(dqn, env, nb_steps: int):
 
     dqn.fit(
         env,
-        nb_steps=nb_steps,
+        nb_steps=STAGE_STEPS_DEFAULT,
         log_interval=10_000,
         visualize=False,
         verbose=2,
@@ -213,9 +190,9 @@ def train(dqn, env, nb_steps: int):
     print(f"Pesos guardados en: {WEIGHTS_PATH}")
 
 
-def evaluate(dqn, env, nb_episodes: int = 110):
-    print(f"\nIniciando evaluación ({nb_episodes} episodios)...")
-    history = dqn.test(env, nb_episodes=nb_episodes, visualize=False, verbose=0)
+def evaluate(dqn, env):
+    print("\nIniciando evaluación (110 episodios)...")
+    history = dqn.test(env, nb_episodes=110, visualize=False, verbose=0)
 
     rewards = history.history["episode_reward"]
     last_100 = rewards[-100:] if len(rewards) >= 100 else rewards
@@ -235,24 +212,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", action="store_true", help="Entrenar el agente")
     parser.add_argument("--test", action="store_true", help="Evaluar el agente")
-    parser.add_argument("--steps", type=int, default=STAGE_STEPS_DEFAULT, help="Pasos de entrenamiento")
-    parser.add_argument("--anneal", type=int, default=200_000, help="Pasos para bajar epsilon")
-    parser.add_argument("--epsmin", type=float, default=0.02, help="Epsilon mínimo durante entrenamiento")
-    parser.add_argument("--memory", type=int, default=1_000_000, help="Tamaño del replay buffer")
-    parser.add_argument("--episodes", type=int, default=110, help="Episodios de test")
     args = parser.parse_args()
 
-    # Si no pones flags, hace train+test por defecto
+    # Si no se ponen flags, hace train+test por defecto
     do_train = args.train or (not args.train and not args.test)
     do_test = args.test or (not args.train and not args.test)
 
     set_seeds(SEED)
 
     env = make_env(SEED)
-    dqn = build_agent(env, steps_anneal=args.anneal, eps_min=args.epsmin, memory_limit=args.memory)
+    dqn = build_agent(env)
+    # Confirmar que el modelo es dueling
+    print("Dueling activado:", dqn.enable_dueling_network)
+    print("Dueling type:", getattr(dqn, "dueling_type", "no attribute"))
 
     if do_train:
-        train(dqn, env, nb_steps=args.steps)
+        train(dqn, env)
 
     if do_test:
         # Asegura que cargue pesos si solo test
@@ -262,7 +237,7 @@ def main():
         else:
             print(f"No se encontraron pesos en {WEIGHTS_PATH}, saliendo...")
             return
-        evaluate(dqn, env, nb_episodes=args.episodes)
+        evaluate(dqn, env)
 
 
 if __name__ == "__main__":
