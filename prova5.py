@@ -182,7 +182,7 @@ def build_agent(env, steps_anneal: int, eps_min: float, memory_limit: int):
         target_model_update=10_000,
         train_interval=4,
         enable_double_dqn=True,
-        enable_dueling_network=False,  # tu modelo ya es dueling
+        enable_dueling_network=False,  # ya lo implementamos manualmente
         custom_model_objects={"DuelingCombine": DuelingCombine},
     )
 
