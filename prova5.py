@@ -165,9 +165,9 @@ def build_agent(env, steps_anneal: int, eps_min: float, memory_limit: int):
     policy = LinearAnnealedPolicy(
         EpsGreedyQPolicy(),
         attr="eps",
-        value_max=1.0,
+        value_max=0.2, # from scratch 1.0
         value_min=eps_min,
-        value_test=0.01,
+        value_test=0.02,
         nb_steps=steps_anneal,
     )
 
@@ -236,8 +236,8 @@ def main():
     parser.add_argument("--train", action="store_true", help="Entrenar el agente")
     parser.add_argument("--test", action="store_true", help="Evaluar el agente")
     parser.add_argument("--steps", type=int, default=STAGE_STEPS_DEFAULT, help="Pasos de entrenamiento")
-    parser.add_argument("--anneal", type=int, default=1_000_000, help="Pasos para bajar epsilon")
-    parser.add_argument("--epsmin", type=float, default=0.1, help="Epsilon mínimo durante entrenamiento")
+    parser.add_argument("--anneal", type=int, default=200_000, help="Pasos para bajar epsilon")
+    parser.add_argument("--epsmin", type=float, default=0.02, help="Epsilon mínimo durante entrenamiento")
     parser.add_argument("--memory", type=int, default=1_000_000, help="Tamaño del replay buffer")
     parser.add_argument("--episodes", type=int, default=110, help="Episodios de test")
     args = parser.parse_args()
