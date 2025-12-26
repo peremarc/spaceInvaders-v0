@@ -10,7 +10,7 @@ from PIL import Image
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras.layers import Conv2D, Dense, Flatten, Input, Layer, Permute
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.optimizers import Adam
 
 from rl.agents.dqn import DQNAgent
@@ -100,19 +100,16 @@ class AtariProcessor(Processor):
         return np.clip(reward, -1.0, 1.0)
 
 
-def build_model(nb_actions: int) -> Model:
-    # keras-rl2 entrega (window_length, H, W)
-    inputs = Input(shape=(WINDOW_LENGTH,) + INPUT_SHAPE, name="input_frames")
-    x = Permute((2, 3, 1), name="permute_to_channels_last")(inputs)  # (H, W, window)
-
-    x = Conv2D(32, (8, 8), strides=(4, 4), activation="relu")(x)
-    x = Conv2D(64, (4, 4), strides=(2, 2), activation="relu")(x)
-    x = Conv2D(64, (3, 3), strides=(1, 1), activation="relu")(x)
-    x = Flatten()(x)
-    x = Dense(512, activation="relu")(x)
-    q = Dense(nb_actions, activation="linear")(x)
-    
-    return Model(inputs, q)
+def build_model(nb_actions):
+    model = Sequential()
+    model.add(Permute((2, 3, 1), input_shape=(WINDOW_LENGTH,) + INPUT_SHAPE))
+    model.add(Conv2D(32, (8, 8), strides=(4, 4), activation="relu"))
+    model.add(Conv2D(64, (4, 4), strides=(2, 2), activation="relu"))
+    model.add(Conv2D(64, (3, 3), strides=(1, 1), activation="relu"))
+    model.add(Flatten())
+    model.add(Dense(512, activation="relu"))
+    model.add(Dense(nb_actions, activation="linear"))  # Q(s,a)
+    return model
 
 
 def make_env(seed: int):
@@ -142,10 +139,10 @@ def build_agent(env):
     policy = LinearAnnealedPolicy(
         EpsGreedyQPolicy(),
         attr="eps",
-        value_max=0.2, # from scratch 1.0
-        value_min=0.02, # from scratch 0.1
-        value_test=0.02, # from scratch 0.01
-        nb_steps=200000, # from scratch 1000000
+        value_max=1.0, # 0.2
+        value_min=0.1, # 0.02
+        value_test=0.01, # 0.02
+        nb_steps=1000000, # 200000
     )
 
     dqn = DQNAgent(
@@ -154,7 +151,7 @@ def build_agent(env):
         policy=policy,
         memory=memory,
         processor=AtariProcessor(),
-        nb_steps_warmup=50_000,
+        nb_steps_warmup=50_000, # 10000
         gamma=0.99,
         target_model_update=10_000,
         train_interval=4,
@@ -182,7 +179,7 @@ def train(dqn, env):
         verbose=2,
         callbacks=[
             FileLogger(LOG_PATH, interval=100),
-            ModelIntervalCheckpoint(WEIGHTS_PATH, interval=100_000),
+            ModelIntervalCheckpoint(WEIGHTS_PATH, interval=50_000),
         ],
     )
 
