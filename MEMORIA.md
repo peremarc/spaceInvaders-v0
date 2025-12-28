@@ -81,6 +81,63 @@ Este resultado confirma la adecuación de las decisiones de diseño adoptadas, e
 
 ---
 
+## Estabilización del entrenamiento: normalización del gradiente y función de pérdida
+
+Con el objetivo de mejorar la estabilidad del entrenamiento y evitar problemas numéricos asociados a actualizaciones excesivas de los parámetros, se han incorporado dos mecanismos adicionales de regularización ampliamente utilizados en aprendizaje por refuerzo profundo: **clipping del gradiente** y **pérdida de Huber**.
+
+---
+
+### Clipping del gradiente (`clipnorm = 10`)
+
+Durante el entrenamiento de redes neuronales profundas en aprendizaje por refuerzo, es habitual que la señal de error presente una varianza elevada, especialmente en las primeras fases del aprendizaje o tras actualizaciones de la red objetivo. Esto puede dar lugar a **gradientes excesivamente grandes**, provocando inestabilidad o divergencia del proceso de optimización.
+
+Para mitigar este efecto, se ha aplicado *gradient clipping* mediante la normalización del gradiente, fijando un valor máximo de norma:
+
+```python
+clipnorm = 10
+```
+
+Este mecanismo limita la magnitud total del vector gradiente sin alterar su dirección, evitando actualizaciones abruptas de los pesos y favoreciendo un aprendizaje más estable. La elección de este valor sigue prácticas habituales en aprendizaje profundo y resulta especialmente adecuada en combinación con redes convolucionales y entrenamiento fuera de política (*off-policy*), como es el caso del DQN.
+
+---
+
+### Función de pérdida Huber (`delta = 1.0`)
+
+En lugar de emplear el error cuadrático medio (MSE), se ha utilizado la **pérdida de Huber** con un parámetro:
+
+```python
+delta = 1.0
+```
+
+La pérdida de Huber combina las ventajas del MSE y del error absoluto medio (MAE):
+
+* se comporta como una pérdida cuadrática para errores pequeños,
+* y como una pérdida lineal para errores grandes.
+
+Esta propiedad la hace especialmente robusta frente a valores atípicos (*outliers*) en la señal de error temporal-diferencial (TD error), que son frecuentes en aprendizaje por refuerzo debido a recompensas inesperadas o transiciones poco comunes.
+
+El valor (\delta = 1.0) coincide con el utilizado en el DQN original de DeepMind y constituye un estándar en la literatura para entornos Atari.
+
+---
+
+### Contribución a la robustez del comportamiento
+
+La combinación de *gradient clipping* y pérdida de Huber permite:
+
+* limitar la influencia de transiciones atípicas sobre el proceso de aprendizaje,
+* reducir la probabilidad de inestabilidades numéricas,
+* y favorecer una convergencia más suave de la política aprendida.
+
+Estas medidas resultan especialmente relevantes en un contexto donde el criterio de evaluación prioriza la **robustez del comportamiento** y la reducción de episodios con bajo rendimiento, contribuyendo de forma indirecta a mejorar el valor mínimo observado en la fase de evaluación.
+
+---
+
+## Relación con el conjunto de decisiones metodológicas
+
+El uso de *gradient clipping* y pérdida de Huber complementa otras decisiones orientadas a la estabilidad del entrenamiento, como el uso de Polyak averaging, Double DQN y la arquitectura Dueling, conformando un conjunto coherente de técnicas destinadas a reducir la variabilidad del aprendizaje y a obtener una política final robusta y consistente.
+
+---
+
 # Justificación del uso de wrappers del entorno Atari
 
 Con el fin de reproducir el entorno experimental empleado en los trabajos originales de DeepMind y sus posteriores replicaciones, se han aplicado una serie de wrappers estándar sobre el entorno `SpaceInvaders-v0`. Estos wrappers permiten controlar el preprocesado de observaciones, la dinámica temporal y la definición de episodios, mejorando la estabilidad y eficiencia del aprendizaje sin modificar la lógica del juego subyacente.
