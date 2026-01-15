@@ -133,6 +133,9 @@ else:
         instalar_si_falta("Pillow", "9.5.0")
         instalar_si_falta("opencv-python-headless", "4.7.0.72")
         instalar_si_falta("matplotlib", "3.3.4")
+        instalar_si_falta("torch", "2.0.1")
+        instalar_si_falta("agents", "1.4.0")
+        instalar_si_falta("torchinfo", "1.8.0")
         print("\nEl entorno esta listo.")
     else:       
         print(f"Para ejecutar correctamente este notebook se requiere un entorno con Python {VERSION_PYTHON_LOCAL}")

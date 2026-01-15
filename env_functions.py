@@ -9,6 +9,7 @@ import sys
 import random
 import gym
 import numpy as np
+import math
 import cv2
 import tensorflow as tf
 import tensorflow.keras.backend as K
@@ -188,8 +189,9 @@ def agent_eval(hist, Nepi=20, Rmin=20):
     print(f"Resultados Test (reward): Media: {score_avg:.2f} | Máximo: {score_max:.2f} | Mínimo: {score_min:.2f}")
 
     # Revisamos performance del agente
-    Cmin = 0       # total de episodios con reward >= Rmin 
-    Cmin_cont = 0  # contador consecutivo
+    Cmin = 0            # total de episodios con reward >= Rmin 
+    Cmin_cont = 0       # contador consecutivo
+    best_Cmin_cont = 0  # mejor contador consecutivo
     
     if total_Nepi >= Nepi:
         for val in score:
@@ -197,12 +199,16 @@ def agent_eval(hist, Nepi=20, Rmin=20):
                 Cmin += 1
                 Cmin_cont += 1
             else:
+                best_Cmin_cont = max(best_Cmin_cont, Cmin_cont)
                 Cmin_cont = 0
-                
-        if Cmin_cont == Nepi:
+        
+        if best_Cmin_cont == 0:
+            best_Cmin_cont = Cmin_cont
+        
+        if best_Cmin_cont == Nepi:
             print(f"Objetivo alcanzado: Durante {Nepi} episodios consecutivos se ha superado o igualado los {Rmin} puntos.")
-        elif Cmin_cont > Nepi:
-            print(f"Objetivo superado: Durante {Cmin_cont} episodios consecutivos se ha superado o igualado los {Rmin} puntos.")
+        elif best_Cmin_cont > Nepi:
+            print(f"Objetivo superado: Durante {best_Cmin_cont} episodios consecutivos se ha superado o igualado los {Rmin} puntos.")
         else:
             print(f"Objetivo no alcanzado: Se han obtenido {Cmin} de {Nepi} episodios por encima de la puntuación. Es necesario seguir entrenando el agente.")
 
@@ -389,17 +395,20 @@ def ShowLastTraining(log_path="training_log.json", steps_por_intervalo=100000):
         return
 
     max_steps = nb_steps[-1]
-    num_intervalos = max_steps // steps_por_intervalo
+    # num_intervalos = max_steps // steps_por_intervalo
+    num_intervalos = math.ceil(max_steps / steps_por_intervalo)
 
     if num_intervalos == 0:
         print("Warning: No hay suficientes pasos para mostrar intervalos.")
         return
-
-    # Recorrer intervalos
+ 
+    # Recorrer intervalos e imprimirlos en pantalla
+    total_episodes = 0
+    
     for k in range(1, num_intervalos + 1):
         inicio = (k - 1) * steps_por_intervalo
         fin    = k * steps_por_intervalo
-
+        
         idx = [i for i, s in enumerate(nb_steps) if inicio < s <= fin]
         if not idx:
             continue
@@ -415,6 +424,7 @@ def ShowLastTraining(log_path="training_log.json", steps_por_intervalo=100000):
         ms_mean = (dur_tot * 1000.0) / steps_por_intervalo
 
         episodios_intervalo = len(idx)
+        total_episodes += episodios_intervalo
 
         linea_final = (
             f"{episodios_intervalo} episodes - "
@@ -432,6 +442,9 @@ def ShowLastTraining(log_path="training_log.json", steps_por_intervalo=100000):
             else:
                 linea_final += f" - {campo}: {media:.3f}"
 
+        if fin >= max_steps:
+            fin = max_steps
+
         print(f"Interval {k} ({fin} steps performed)")
         print(
             f"{steps_por_intervalo}/{steps_por_intervalo} [==============================] "
@@ -439,6 +452,23 @@ def ShowLastTraining(log_path="training_log.json", steps_por_intervalo=100000):
         )
         print(linea_final)
         print("-" * 90)
+
+    # Calcular tiempo total y numero de episodios
+    tr_total_t = np.sum(duraciones)
+    tr_steps = fin
+    
+    # Media final de ms/step
+    ms_per_step_total = ((tr_total_t / tr_steps) * 1000) if tr_steps > 0 else 0
+
+    # Imprime resumen final
+    print(
+        f"\n==== TRAINING COMPLETADO ==== | "
+        f"Total steps: {tr_steps} | "
+        f"Episodes: {total_episodes} | "
+        f"Total time: {tr_total_t:.1f}s {ms_per_step_total:.0f}ms/step | "
+        f"=====\n"
+    )
+
 
 #---------------------------------- 6. Funciones de training & test -------------------------------
 # Crea el entrono de simulacion para training y/o test
@@ -468,7 +498,6 @@ def set_seeds(seed: int):
     np.random.seed(seed)
     random.seed(seed)
     tf.random.set_seed(seed)
-
 
 # Funcion para entrenar al agente
 def TrainAgent(agent, env, tr_steps, n_sol=1, n_train=1):
@@ -548,3 +577,49 @@ def TestAgent(agent, env, n_sol=1, n_train=1, n_test=100, Nepi_min=100, reward_m
     print("\nTest finalizado.\n")
     print("Graficamos resultados test:")
     agent_eval(history, Nepi_min, reward_min)
+    
+
+# Funcion para comprar resultados finales
+def compara_solutions(json_paths, labels=None, alpha=0.1):
+    """
+    Carga varios ficheros JSON de logs de entrenamiento y compara sus recompensas usando EMA.
+
+    Parámetros:
+    - json_paths: lista de rutas a los ficheros JSON.
+    - labels: nombres para cada curva (si None, usa los nombres de archivo).
+    - alpha: factor de suavizado EMA (0.05–0.2 recomendado).
+    """
+
+    if labels is None:
+        labels = [f"Modelo {i+1}" for i in range(len(json_paths))]
+
+    plt.figure(figsize=(20, 5))
+
+    for path, label in zip(json_paths, labels):
+
+        # Cargar JSON
+        with open(path, "r") as f:
+            data = json.load(f)
+
+        rewards = data.get("episode_reward", [])
+
+        if not rewards:
+            print(f"No se encontraron recompensas en {path}")
+            continue
+
+        # Calculo EMA
+        ema = []
+        s = rewards[0]
+        for r in rewards:
+            s = alpha * r + (1 - alpha) * s
+            ema.append(s)
+        ema = np.array(ema)
+
+        plt.plot(ema, label=label)
+
+    plt.title("Comparación de recompensas por episodio (EMA)")
+    plt.xlabel("Episodio")
+    plt.ylabel("Recompensas")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
